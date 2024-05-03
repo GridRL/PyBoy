@@ -161,6 +161,8 @@ class PyBoy:
         self.avg_pre = 0
         self.avg_tick = 0
         self.avg_post = 0
+        self.t_start = 0
+        self.t_pre = 0
 
         # Absolute frame count of the emulation
         self.frame_count = 0
@@ -436,7 +438,37 @@ class PyBoy:
             running = self._tick(_render)
             count -= 1
         return running
+    def instruction_tick(self, kind=5, render=True):
+        if self.stopped:
+            return 4
+        if kind > 3:
+            self.t_start = time.perf_counter_ns()
+            self._handle_events(self.events)
+            self.t_pre = time.perf_counter_ns()
+            if not self.paused:
+                self.__rendering(render)
+        if self.paused:
+            return kind
+        kind = self.mb.instruction_tick(kind)
+        if kind < 2:
+            return kind
+        self.frame_count += 1
+        
+        t_tick = time.perf_counter_ns()
+        self._post_tick()
+        t_post = time.perf_counter_ns()
 
+        nsecs = self.t_pre - self.t_start
+        self.avg_pre = 0.9 * self.avg_pre + (0.1*nsecs/1_000_000_000)
+
+        nsecs = t_tick - self.t_pre
+        self.avg_tick = 0.9 * self.avg_tick + (0.1*nsecs/1_000_000_000)
+
+        nsecs = t_post - t_tick
+        self.avg_post = 0.9 * self.avg_post + (0.1*nsecs/1_000_000_000)
+
+        return 4 if self.quitting else 5
+        
     def _handle_events(self, events):
         # This feeds events into the tick-loop from the window. There might already be events in the list from the API.
         events = self._plugin_manager.handle_events(events)

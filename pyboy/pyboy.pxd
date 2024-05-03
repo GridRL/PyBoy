@@ -6,7 +6,7 @@
 
 cimport cython
 from libc cimport time
-from libc.stdint cimport int64_t, uint64_t
+from libc.stdint cimport uint8_t, int64_t, uint64_t
 
 from pyboy.api.memory_scanner cimport MemoryScanner
 from pyboy.api.screen cimport Screen
@@ -41,7 +41,9 @@ cdef class PyBoy:
     cdef double avg_pre
     cdef double avg_tick
     cdef double avg_post
-
+    cdef double t_start
+    cdef double t_pre
+    
     cdef readonly list events
     cdef list queued_input
     cdef bint quitting
@@ -65,6 +67,7 @@ cdef class PyBoy:
 
     @cython.locals(t_start=int64_t, t_pre=int64_t, t_tick=int64_t, t_post=int64_t, nsecs=int64_t)
     cpdef bint _tick(self, bint) noexcept
+    cpdef uint8_t instruction_tick(self, kind=*, render=*) noexcept
     @cython.locals(running=bint)
     cpdef bint tick(self, count=*, render=*) noexcept
     cpdef void stop(self, save=*) noexcept
