@@ -5,7 +5,9 @@ import socket
 import sys
 import threading
 
-logger = logging.getLogger(__name__)
+import pyboy
+
+logger = pyboy.logging.get_logger(__name__)
 
 SERIAL_FREQ = 8192 # Hz
 CPU_FREQ = 4213440 # Hz
@@ -62,7 +64,7 @@ class Serial:
 
     def tick(self, cycles):
         if self.connection is None:
-            return
+            return False
 
         # self.cycles_count += 1
 
@@ -115,7 +117,7 @@ class Serial:
                 data = self.connection.recv(1)
                 self.SB = ((self.SB << 1) & 0xFF) | data[0] & 1
 
-                logger.info(f"recv sb: {self.SB:08b}")
+                #logger.info(f"recv sb: {self.SB:08b}")
                 self.trans_bits += 1
 
                 self.cycles_count = 0
@@ -128,7 +130,9 @@ class Serial:
             return False
 
     def cycles_to_transmit(self):
-        if self.connection:
+        if True:
+            return 4
+        #if self.connection:
             if self.SC & 0x80:
                 return max(self.cycles_target - self.cycles_count, 0)
                 # return CPU_FREQ // SERIAL_FREQ

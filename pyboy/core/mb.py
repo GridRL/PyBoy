@@ -278,7 +278,7 @@ class Motherboard:
         self.lcd.frame_done = False # Clear vblank flag for next iteration
         return b
 
-    def tick(self):
+    def native_tick(self):
         while self.processing_frame():
             if self.cgb and self.hdma.transfer_active and self.lcd._STAT._mode & 0b11 == 0:
                 cycles = self.hdma.tick(self)
@@ -307,7 +307,7 @@ class Motherboard:
                         mode0_cycles
                     )
                 )
-                cycles = 4
+                #cycles = 4
 
             #TODO: Support General Purpose DMA
             # https://gbdev.io/pandocs/CGB_Registers.html#bit-7--0---general-purpose-dma
@@ -321,8 +321,8 @@ class Motherboard:
 
             if self.timer.tick(cycles):
                 self.cpu.set_interruptflag(INTR_TIMER)
-            if self.serial.tick(cycles):
-                self.cpu.set_interruptflag(INTR_SERIAL)
+            #if self.serial.tick(cycles):
+            #    self.cpu.set_interruptflag(INTR_SERIAL)
 
             lcd_interrupt = self.lcd.tick(cycles)
             if lcd_interrupt:
@@ -335,7 +335,84 @@ class Motherboard:
         self.sound.sync()
 
         return self.breakpoint_singlestep
+    
+    def _partial_instr_pre_serial(self):
+        if self.cgb and self.hdma.transfer_active and self.lcd._STAT._mode & 0b11 == 0:
+            cycles = self.hdma.tick(self)
+        else:
+            cycles = self.cpu.tick()
 
+        if self.cpu.halted:
+            # Fast-forward to next interrupt:
+            # As we are halted, we are guaranteed, that our state
+            # cannot be altered by other factors than time.
+            # For HiToLo interrupt it is indistinguishable whether
+            # it gets triggered mid-frame or by next frame
+            # Serial is not implemented, so this isn't a concern
+
+            # Help Cython with types
+            mode0_cycles = 1 << 32
+            if self.cgb and self.hdma.transfer_active:
+                mode0_cycles = self.lcd.cycles_to_mode0()
+
+            cycles = max(
+                0,
+                min(
+                    self.lcd.cycles_to_interrupt(),
+                    self.timer.cycles_to_interrupt(),
+                    #self.serial.cycles_to_transmit(),
+                    mode0_cycles
+                )
+            )
+            #cycles = 4
+
+        #TODO: Support General Purpose DMA
+        # https://gbdev.io/pandocs/CGB_Registers.html#bit-7--0---general-purpose-dma
+
+        # TODO: Unify interface
+        sclock = self.sound.clock
+        if self.cgb and self.double_speed:
+            self.sound.clock = sclock + cycles//2
+        else:
+            self.sound.clock = sclock + cycles
+
+        if self.timer.tick(cycles):
+            self.cpu.set_interruptflag(INTR_TIMER)
+        return cycles
+    
+    def _partial_instr_serial(self, cycles):
+        #if self.serial.tick(cycles):
+        #    self.cpu.set_interruptflag(INTR_SERIAL)
+        return True
+    
+    def _partial_instr_post_serial(self, cycles):
+        lcd_interrupt = self.lcd.tick(cycles)
+        if lcd_interrupt:
+            self.cpu.set_interruptflag(lcd_interrupt)
+        if self.breakpoint_singlestep:
+            return False
+        return True
+    
+    def _partial_instr_post_tick(self):
+        self.sound.sync()
+        return self.breakpoint_singlestep
+    
+    def instruction_tick(self, kind):
+        if kind==1:
+            if self._partial_instr_post_serial(self.instr_cycles):
+                return self.instruction_tick(0)  
+        elif self.processing_frame():
+            self.instr_cycles = self._partial_instr_pre_serial()
+            self._partial_instr_serial(self.instr_cycles)
+            return 1
+        return 3 if self._partial_instr_post_tick() else 2        
+    
+    def tick(self):
+        kind=0
+        while kind < 2:
+            kind = self.instruction_tick(kind)
+        return kind == 3
+    
     ###################################################################
     # MemoryManager
     #
@@ -373,10 +450,10 @@ class Motherboard:
             return self.ram.non_io_internal_ram0[i - 0xFEA0]
         elif 0xFF00 <= i < 0xFF4C: # I/O ports
             if i == 0xFF01:
-                logger.info(f"get SB {self.serial.SB}")
+                #logger.info(f"get SB {self.serial.SB}")
                 return self.serial.SB
             elif i == 0xFF02:
-                logger.info(f"get SC {self.serial.SC}")
+                #logger.info(f"get SC {self.serial.SC}")
                 return self.serial.SC
             elif i == 0xFF04:
                 return self.timer.DIV
@@ -493,7 +570,7 @@ class Motherboard:
                 self.ram.io_ports[i - 0xFF00] = self.interaction.pull(value)
             elif i == 0xFF01:
                 self.serial.SB = value
-                logger.info(f"SB: {value:02x}")
+                #logger.info(f"SB: {value:02x}")
 
                 self.serialbuffer[self.serialbuffer_count] = value
                 self.serialbuffer_count += 1
@@ -501,7 +578,7 @@ class Motherboard:
                 self.ram.io_ports[i - 0xFF00] = value
             elif i == 0xFF02:
                 self.serial.SC = value
-                logger.info(f"SC: {value:02x}")
+                #logger.info(f"SC: {value:02x}")
             elif i == 0xFF04:
                 self.timer.reset()
             elif i == 0xFF05:

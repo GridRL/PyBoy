@@ -15,6 +15,7 @@ cimport pyboy.core.lcd
 cimport pyboy.core.ram
 cimport pyboy.core.sound
 cimport pyboy.core.timer
+cimport pyboy.core.serial
 from pyboy.logging.logging cimport Logger
 from pyboy.utils cimport IntIOInterface, WindowEvent
 
@@ -35,10 +36,11 @@ cdef class Motherboard:
     cdef pyboy.core.timer.Timer timer
     cdef pyboy.core.sound.Sound sound
     cdef pyboy.core.cartridge.base_mbc.BaseMBC cartridge
-    cdef object serial
+    cdef pyboy.core.serial.Serial serial
     cdef bint bootrom_enabled
     cdef char[1024] serialbuffer
     cdef uint16_t serialbuffer_count
+    cdef int64_t instr_cycles
 
     # CGB
     cdef HDMA hdma
@@ -60,6 +62,16 @@ cdef class Motherboard:
     cdef void buttonevent(self, WindowEvent) noexcept
     cdef void stop(self, bint) noexcept
     @cython.locals(cycles=int64_t, mode0_cycles=int64_t, breakpoint_index=int64_t)
+    cdef bint native_tick(self) noexcept nogil
+
+    @cython.locals(cycles=int64_t, mode0_cycles=int64_t, breakpoint_index=int64_t)
+    cdef int64_t _partial_instr_pre_serial(self) noexcept nogil
+    cdef bint _partial_instr_serial(self,int64_t) noexcept nogil
+    cdef bint _partial_instr_post_serial(self,int64_t) noexcept nogil
+    cdef bint _partial_instr_post_tick(self) noexcept nogil
+    @cython.locals(cycles=int64_t, breakpoint_index=int64_t)
+    cdef uint8_t instruction_tick(self,uint8_t) noexcept nogil
+    @cython.locals(cycles=int64_t, kind=int64_t, breakpoint_index=int64_t)
     cdef bint tick(self) noexcept nogil
 
     cdef void switch_speed(self) noexcept nogil
